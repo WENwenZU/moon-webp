@@ -61,6 +61,17 @@ pub(all) suberror DecodeError {
   InvalidAlphaHeader(UInt)
   /// An `ALPH` payload is too short for its method and canvas size.
   AlphaPayloadTooShort
+  /// A `VP8X` file is an animation, which `decode_webp` does not fold
+  /// into a single image.
+  AnimatedImage
+  /// No `ANIM` chunk precedes the animation frames.
+  MissingAnimationHeader
+  /// An `ANIM` chunk is shorter than its six-byte payload (chunk size).
+  InvalidAnimationHeader(UInt)
+  /// The file carries no `ANMF` animation frame.
+  MissingAnimationFrame
+  /// An `ANMF` frame header or its rectangle is malformed.
+  InvalidAnimationFrame
 } derive(Eq, @debug.Debug)
 
 ///|
