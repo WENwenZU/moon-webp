@@ -75,6 +75,17 @@ pub(all) suberror DecodeError {
 } derive(Eq, @debug.Debug)
 
 ///|
+/// Errors print the way they debug, so a message names the variant and the
+/// number it carries. A caller that only wants a log line can interpolate
+/// the error directly.
+pub impl Show for DecodeError with fn to_string(self) {
+  @debug.to_string(self)
+}
+
+///|
+pub extend DecodeError with Show::{to_string, output}
+
+///|
 pub extend DecodeError with Eq::{not_equal, equal}
 
 ///|
