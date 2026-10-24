@@ -1,0 +1,3 @@
+// The samples the examples decode. They are embedded rather than read
+// from disk so that every example runs on every backend without any
+// file system access.

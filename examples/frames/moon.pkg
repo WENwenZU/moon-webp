@@ -1,0 +1,6 @@
+import {
+  "WENwenZU/moon-webp/examples/fixtures",
+  "WENwenZU/moon-webp/webp",
+}
+
+pkgtype(kind: "executable")
