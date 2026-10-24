@@ -52,11 +52,12 @@ pub fn parse_riff(buf : BytesView) -> RiffFile raise DecodeError {
     raise DecodeError::InvalidSignature
   }
   let size = le_u32(buf, 4)
-  let declared = size.reinterpret_as_int()
-  if declared > buf.length() - 8 {
+  // Compare as unsigned: a size with the top bit set means "far past the
+  // end", and reading it back as a negative integer would let it through.
+  if size > (buf.length() - 8).reinterpret_as_uint() {
     raise DecodeError::SizePastEnd(size)
   }
-  let end = 8 + declared
+  let end = 8 + size.reinterpret_as_int()
   let chunks : Array[RiffChunk] = []
   let mut offset = 12
   while offset < end {
@@ -64,11 +65,11 @@ pub fn parse_riff(buf : BytesView) -> RiffFile raise DecodeError {
       raise DecodeError::ChunkHeaderOverrun(offset)
     }
     let csize = le_u32(buf, offset + 4)
-    let csize_i = csize.reinterpret_as_int()
     let dstart = offset + 8
-    if dstart + csize_i > end {
+    if csize > (end - dstart).reinterpret_as_uint() {
       raise DecodeError::ChunkPayloadOverrun(offset)
     }
+    let csize_i = csize.reinterpret_as_int()
     chunks.push({
       id: buf.exact_view(start=offset, end=offset + 4),
       size: csize,

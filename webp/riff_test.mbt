@@ -69,3 +69,21 @@ test "rejects a chunk payload cut off by the declared end" {
   let err = @test.expect_error(() => @webp.parse_riff(file))
   @test.assert_eq(err, @webp.DecodeError::ChunkPayloadOverrun(12))
 }
+
+///|
+test "rejects a declared size whose top bit is set" {
+  // 0xffffffff payload bytes reads back as -1 if the size is treated as a
+  // signed integer, and -1 is smaller than any buffer.
+  let err = @test.expect_error(() => {
+    @webp.parse_riff(b"\x52\x49\x46\x46\xff\xff\xff\xff\x57\x45\x42\x50")
+  })
+  @test.assert_eq(err, @webp.DecodeError::SizePastEnd(0xffffffffU))
+}
+
+///|
+test "rejects a chunk size whose top bit is set" {
+  // Defined payload of four bytes, chunk claims 0xffffffff of them.
+  let file = b"\x52\x49\x46\x46\x0c\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x4c\xff\xff\xff\xff"
+  let err = @test.expect_error(() => @webp.parse_riff(file))
+  @test.assert_eq(err, @webp.DecodeError::ChunkPayloadOverrun(12))
+}

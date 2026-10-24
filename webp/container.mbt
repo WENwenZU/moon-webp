@@ -428,12 +428,15 @@ fn read_frame_payload(
     if offset + 8 > end {
       raise DecodeError::InvalidAnimationFrame
     }
-    let size = le_u32(payload, offset + 4).reinterpret_as_int()
+    let size = le_u32(payload, offset + 4)
     let data_start = offset + 8
-    if data_start + size > end {
+    // Unsigned comparison: a size with the top bit set is not a short
+    // chunk, it is a broken one.
+    if size > (end - data_start).reinterpret_as_uint() {
       raise DecodeError::InvalidAnimationFrame
     }
-    let data = payload.exact_view(start=data_start, end=data_start + size)
+    let size_int = size.reinterpret_as_int()
+    let data = payload.exact_view(start=data_start, end=data_start + size_int)
     if has_id(payload, offset, b"VP8L") || has_id(payload, offset, b"VP8 ") {
       image = Some(data)
       is_lossless = has_id(payload, offset, b"VP8L")
@@ -445,7 +448,7 @@ fn read_frame_payload(
         Some(_) => ()
       }
     }
-    offset = data_start + size + (size & 1)
+    offset = data_start + size_int + (size_int & 1)
   }
   let image_payload = match image {
     None => raise DecodeError::InvalidAnimationFrame

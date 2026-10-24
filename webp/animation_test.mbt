@@ -481,3 +481,17 @@ test "rejects a frame without an image chunk" {
   let err = @test.expect_error(() => @webp.decode_animation(anim_no_image))
   @test.assert_eq(err, @webp.DecodeError::InvalidAnimationFrame)
 }
+
+///|
+test "rejects an animation sub-chunk with an impossible size" {
+  // A 1x1 canvas, one frame, and a first sub-chunk that claims
+  // 0xffffffff bytes: read as a signed integer that is -1, which would
+  // slip past a "past the end" check and invert the view.
+  let file = b"\x52\x49\x46\x46\x44\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x58" +
+    b"\x0a\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x41\x4e" +
+    b"\x49\x4d\x06\x00\x00\x00\x00\x00\x00\x00\x00\x00\x41\x4e\x4d\x46" +
+    b"\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" +
+    b"\x00\x00\x00\x00\x56\x50\x38\x4c\xff\xff\xff\xff"
+  let err = @test.expect_error(() => @webp.decode_animation(file))
+  @test.assert_eq(err, @webp.DecodeError::InvalidAnimationFrame)
+}
