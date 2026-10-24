@@ -9,8 +9,17 @@ cross-check reference on a corpus of real files.
 The library is a single package, `webp`. RIFF parsing and the VP8L image
 core are in place: literals, LZ77 backward references, color cache, meta
 prefix groups, and the four level-zero transforms (predictor,
-cross-color, subtract green, color indexing). The WebP file wrapper and
-animation are the remaining decoding layers.
+cross-color, subtract green, color indexing). The file wrapper decodes
+both the simple format (`VP8L`) and the extended one (`VP8X` with
+skipped metadata chunks), and reads the `ALPH` plane of lossy files,
+including its four spatial filters. Animation is the remaining decoding
+layer.
+
+```moonbit
+let image = @webp.decode_webp(bytes)   // whole file in, ARGB pixels out
+let info = @webp.webp_info(bytes)      // canvas size and feature flags
+let alpha = @webp.decode_alpha(bytes)  // ALPH plane of a lossy file
+```
 
 ## Building
 

@@ -973,6 +973,18 @@ fn decode_image_stream(
 }
 
 ///|
+/// Decode a VP8L image stream that carries no five-byte header, taking
+/// its dimensions from the caller. This is how an `ALPH` chunk stores a
+/// compressed alpha plane.
+fn decode_vp8l_stream(
+  data : BytesView,
+  width : Int,
+  height : Int,
+) -> Array[UInt] raise DecodeError {
+  decode_image_stream(BitReader::new(data), width, height, true, true)
+}
+
+///|
 /// Decode a standalone VP8L payload (beginning with its five-byte header).
 /// The returned pixels are ARGB, after every level-zero transform has been
 /// undone.

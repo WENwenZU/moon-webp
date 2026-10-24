@@ -39,6 +39,28 @@ pub(all) suberror DecodeError {
   InvalidBackwardReference(Int)
   /// A backward-reference copy runs past the end of the image.
   BackwardReferenceOverrun(Int)
+  /// A RIFF file uses a form type other than `WEBP`.
+  InvalidRiffForm
+  /// The first chunk is not a `VP8X`, `VP8L`, or `VP8 ` chunk.
+  InvalidChunkOrder
+  /// A `VP8X` chunk does not carry its fixed ten-byte payload (chunk size).
+  InvalidVp8xChunk(UInt)
+  /// The `VP8X` canvas area reaches the 2^32 pixel limit.
+  CanvasTooLarge
+  /// A `VP8 ` chunk does not start with a well-formed keyframe header.
+  InvalidVp8Header
+  /// No `VP8L` or `VP8 ` image chunk follows the header chunks.
+  MissingImageChunk
+  /// The `VP8X` canvas size disagrees with the image chunk.
+  CanvasSizeMismatch
+  /// The image payload is lossy VP8, which this decoder does not decode.
+  UnsupportedLossyImage
+  /// No `ALPH` chunk carries alpha for the requested image.
+  MissingAlphaChunk
+  /// An `ALPH` header byte names an unknown method or sets reserved bits.
+  InvalidAlphaHeader(UInt)
+  /// An `ALPH` payload is too short for its method and canvas size.
+  AlphaPayloadTooShort
 } derive(Eq, @debug.Debug)
 
 ///|
