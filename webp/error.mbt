@@ -13,6 +13,22 @@ pub(all) suberror DecodeError {
   ChunkHeaderOverrun(Int)
   /// A chunk payload runs past the declared end (header offset).
   ChunkPayloadOverrun(Int)
+  /// The VP8L signature is not 0x2f.
+  InvalidVp8lSignature(UInt)
+  /// The reserved VP8L version is not zero.
+  UnsupportedVp8lVersion(UInt)
+  /// A bit read was negative or wider than 24 bits.
+  InvalidBitCount(Int)
+  /// A simple prefix code names a symbol outside its alphabet.
+  InvalidPrefixSymbol(Int)
+  /// Prefix code lengths do not describe a complete binary tree.
+  InvalidPrefixTree
+  /// A code-length repeat runs past the announced symbol limit.
+  PrefixRepeatOverrun
+  /// The color cache size parameter is outside the range 1..11.
+  InvalidColorCacheBits(Int)
+  /// An entropy image is empty or does not match its announced dimensions.
+  InvalidEntropyImage
 } derive(Eq, @debug.Debug)
 
 ///|
