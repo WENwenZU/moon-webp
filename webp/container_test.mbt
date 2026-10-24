@@ -216,6 +216,17 @@ let canvas_mismatch : Bytes = b"\x52\x49\x46\x46\x70\x00\x00\x00\x57\x45\x42\x50
   b"\xd0\xb8\x78\x69\x3c\x34\x3e\x02"
 
 ///|
+/// A `VP8X` canvas of 2^24 by 2^24 pixels: more than 2^32 pixels in total,
+/// which no array can address.
+let canvas_too_large : Bytes = b"\x52\x49\x46\x46\x16\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x58" +
+  b"\x0a\x00\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\xff\xff"
+
+///|
+/// A simple-format file whose first chunk is `ALPH` rather than an image.
+let alpha_first : Bytes = b"\x52\x49\x46\x46\x10\x00\x00\x00\x57\x45\x42\x50\x41\x4c\x50\x48" +
+  b"\x04\x00\x00\x00\x00\x00\x00\x00"
+
+///|
 test "decodes a simple-format lossless file" {
   let image = @webp.decode_webp(simple_file)
   @test.assert_eq(image.width, 13)
@@ -307,4 +318,16 @@ test "reports the alpha hint of a simple-format file" {
   @test.assert_eq(info.has_alpha, true)
   @test.assert_eq(info.has_animation, false)
   @test.assert_eq(info.is_lossless, true)
+}
+
+///|
+test "rejects a canvas that cannot be addressed" {
+  let err = @test.expect_error(() => @webp.webp_info(canvas_too_large))
+  @test.assert_eq(err, @webp.DecodeError::CanvasTooLarge)
+}
+
+///|
+test "rejects a simple-format file that starts with a non-image chunk" {
+  let err = @test.expect_error(() => @webp.decode_webp(alpha_first))
+  @test.assert_eq(err, @webp.DecodeError::InvalidChunkOrder)
 }
