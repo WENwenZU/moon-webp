@@ -1,5 +1,8 @@
 # moon-webp
 
+[![ci](https://github.com/WENwenZU/moon-webp/actions/workflows/ci.yml/badge.svg)](https://github.com/WENwenZU/moon-webp/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 A WebP decoder written in MoonBit. It reads the lossless `VP8L` bitstream,
 the RIFF container around it, the alpha plane of lossy files, and animated
 files, and hands back ARGB pixels. No dependencies, no FFI, no build
