@@ -81,6 +81,13 @@ moon run examples/frames    # every composited animation frame, with checksums
 `examples/frames` shows what blending and disposal actually produce: the
 frame checksums it prints match `anim_dump` from libwebp byte for byte.
 
+![the two bundled stills rendered in the terminal](docs/preview.png)
+
+That picture is `examples/preview`'s own output — an opaque sample on the
+left, and on the right one whose alpha fades out towards the border — laid
+out from the color escapes a terminal would receive, so it shows exactly
+what the decoder hands back.
+
 ## Testing
 
 ```bash

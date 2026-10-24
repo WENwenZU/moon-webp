@@ -331,3 +331,11 @@ test "rejects a simple-format file that starts with a non-image chunk" {
   let err = @test.expect_error(() => @webp.decode_webp(alpha_first))
   @test.assert_eq(err, @webp.DecodeError::InvalidChunkOrder)
 }
+
+///|
+test "rejects a file without any chunk" {
+  let err = @test.expect_error(() => {
+    @webp.decode_webp(b"\x52\x49\x46\x46\x04\x00\x00\x00\x57\x45\x42\x50")
+  })
+  @test.assert_eq(err, @webp.DecodeError::MissingImageChunk)
+}
