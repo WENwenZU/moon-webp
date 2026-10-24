@@ -84,6 +84,7 @@ frame checksums it prints match `anim_dump` from libwebp byte for byte.
 moon check --deny-warn
 moon test
 moon test --target js
+moon test --target native   # needs a C compiler
 ```
 
 The tests are self-contained: every fixture is embedded as a byte literal,
@@ -93,6 +94,13 @@ verified against `dwebp` and `anim_dump` before being committed, pixel for
 pixel. That comparison is what makes the decoder trustworthy: a golden file
 that both implementations agree on is worth more than one only this decoder
 has ever seen.
+
+A corpus test keeps that comparison alive in CI by freezing `dwebp`'s
+output as one digest per image: a single pixel, a single row, a single
+column, odd dimensions, 300 pixels wide, a palette, noise, a gradient, and
+the alpha plane of a lossy file. Two more tests cut every sample at every
+length and flip every bit of the first payload bytes, so a damaged file has
+to come back as a `DecodeError` rather than a panic.
 
 Coverage includes the header and prefix-code tables, LZ77 references,
 transforms, container layouts, alpha filters, animation compositing, and
