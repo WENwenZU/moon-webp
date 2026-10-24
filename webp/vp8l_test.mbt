@@ -48,11 +48,10 @@ test "rejects an image stream cut off after the header" {
 }
 
 ///|
-test "reports transforms that are not implemented yet" {
-  // A 2x1 image whose image stream starts with transform flag 1 and
-  // transform type 2.
+test "rejects a repeated transform" {
+  // Subtract-green appears twice: flag/type pairs 1,2 then 1,2.
   let err = @test.expect_error(() => {
-    @webp.decode_vp8l(b"\x2f\x01\x00\x00\x10\x05")
+    @webp.decode_vp8l(b"\x2f\x01\x00\x00\x10\x2d")
   })
-  @test.assert_eq(err, @webp.DecodeError::UnsupportedVp8lTransform(2))
+  @test.assert_eq(err, @webp.DecodeError::DuplicateVp8lTransform(2))
 }

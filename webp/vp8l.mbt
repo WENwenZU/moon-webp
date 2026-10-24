@@ -196,9 +196,15 @@ fn read_prefix_code(
       raise DecodeError::InvalidPrefixSymbol(max_symbol)
     }
   }
+  // `max_symbol` caps the number of code-length tokens that are read, not the
+  // number of lengths they produce: a repeat token can cover a whole run at
+  // once. The length list therefore still has to reach the end of the alphabet,
+  // which is how the reference decoder reads it.
   let mut index = 0
+  let mut tokens = 0
   let mut previous_nonzero = 8
-  while index < max_symbol {
+  while index < alphabet_size && tokens < max_symbol {
+    tokens = tokens + 1
     let code = code_length_code.read_symbol(reader)
     if code <= 15 {
       lengths[index] = code
@@ -213,7 +219,7 @@ fn read_prefix_code(
         18 => (0, 11 + reader.read(7).reinterpret_as_int())
         _ => raise DecodeError::InvalidPrefixTree
       }
-      if repeat > max_symbol - index {
+      if repeat > alphabet_size - index {
         raise DecodeError::PrefixRepeatOverrun
       }
       for _ in 0..<repeat {
@@ -514,6 +520,427 @@ fn decode_image_pixels(
 }
 
 ///|
+fn div_round_up(value : Int, divisor : Int) -> Int {
+  (value + divisor - 1) / divisor
+}
+
+///|
+fn component(color : UInt, shift : Int) -> Int {
+  ((color >> shift) & 0xffU).reinterpret_as_int()
+}
+
+///|
+fn add_pixels(a : UInt, b : UInt) -> UInt {
+  let mut result = 0U
+  for index in 0..<4 {
+    let shift = index * 8
+    let value = (component(a, shift) + component(b, shift)) & 0xff
+    result = result | (value.reinterpret_as_uint() << shift)
+  }
+  result
+}
+
+///|
+fn average2(a : UInt, b : UInt) -> UInt {
+  let mut result = 0U
+  for index in 0..<4 {
+    let shift = index * 8
+    let value = (component(a, shift) + component(b, shift)) >> 1
+    result = result | (value.reinterpret_as_uint() << shift)
+  }
+  result
+}
+
+///|
+fn absolute(value : Int) -> Int {
+  if value < 0 {
+    -value
+  } else {
+    value
+  }
+}
+
+///|
+fn select_predictor(left : UInt, top : UInt, top_left : UInt) -> UInt {
+  let mut score = 0
+  for index in 0..<4 {
+    let shift = index * 8
+    let a = component(top, shift)
+    let b = component(left, shift)
+    let c = component(top_left, shift)
+    score = score + absolute(b - c) - absolute(a - c)
+  }
+  if score <= 0 {
+    top
+  } else {
+    left
+  }
+}
+
+///|
+fn clamp_component(value : Int) -> Int {
+  if value < 0 {
+    0
+  } else if value > 255 {
+    255
+  } else {
+    value
+  }
+}
+
+///|
+fn clamp_add_subtract_full(left : UInt, top : UInt, top_left : UInt) -> UInt {
+  let mut result = 0U
+  for index in 0..<4 {
+    let shift = index * 8
+    let value = clamp_component(
+      component(left, shift) +
+      component(top, shift) -
+      component(top_left, shift),
+    )
+    result = result | (value.reinterpret_as_uint() << shift)
+  }
+  result
+}
+
+///|
+fn trunc_div2(value : Int) -> Int {
+  if value < 0 {
+    -(-value / 2)
+  } else {
+    value / 2
+  }
+}
+
+///|
+fn clamp_add_subtract_half(left : UInt, top : UInt, top_left : UInt) -> UInt {
+  let average = average2(left, top)
+  let mut result = 0U
+  for index in 0..<4 {
+    let shift = index * 8
+    let value = clamp_component(
+      component(average, shift) +
+      trunc_div2(component(average, shift) - component(top_left, shift)),
+    )
+    result = result | (value.reinterpret_as_uint() << shift)
+  }
+  result
+}
+
+///|
+fn predict_pixel(
+  mode : Int,
+  left : UInt,
+  top : UInt,
+  top_left : UInt,
+  top_right : UInt,
+) -> UInt raise DecodeError {
+  match mode {
+    0 => 0xff000000U
+    1 => left
+    2 => top
+    3 => top_right
+    4 => top_left
+    5 => average2(average2(left, top_right), top)
+    6 => average2(left, top_left)
+    7 => average2(left, top)
+    8 => average2(top_left, top)
+    9 => average2(top, top_right)
+    10 => average2(average2(left, top_left), average2(top, top_right))
+    11 => select_predictor(left, top, top_left)
+    12 => clamp_add_subtract_full(left, top, top_left)
+    13 => clamp_add_subtract_half(left, top, top_left)
+    _ => raise DecodeError::InvalidPredictorMode(mode)
+  }
+}
+
+///|
+fn signed_byte(value : Int) -> Int {
+  let unsigned = value & 0xff
+  if unsigned >= 128 {
+    unsigned - 256
+  } else {
+    unsigned
+  }
+}
+
+///|
+fn color_transform_delta(multiplier : Int, color : Int) -> Int {
+  (signed_byte(multiplier) * signed_byte(color)) >> 5
+}
+
+///|
+priv enum Vp8lTransformKind {
+  Predictor
+  CrossColor
+  SubtractGreen
+  ColorIndexing
+}
+
+///|
+priv struct Vp8lTransform {
+  kind : Vp8lTransformKind
+  bits : Int
+  xsize : Int
+  palette_size : Int
+  data : Array[UInt]
+}
+
+///|
+fn cumulative_palette(raw : Array[UInt], size : Int) -> Array[UInt] {
+  let palette = Array::make(size, 0U)
+  if size > 0 {
+    palette[0] = raw[0]
+  }
+  for index in 1..<size {
+    palette[index] = add_pixels(raw[index], palette[index - 1])
+  }
+  palette
+}
+
+///|
+fn read_transforms(
+  reader : BitReader,
+  width : Int,
+  height : Int,
+) -> (Array[Vp8lTransform], Int) raise DecodeError {
+  let transforms : Array[Vp8lTransform] = []
+  let mut current_width = width
+  let mut seen = 0
+  while reader.read(1) == 1U {
+    let transform_type = reader.read(2).reinterpret_as_int()
+    let kind = match transform_type {
+      0 => Predictor
+      1 => CrossColor
+      2 => SubtractGreen
+      _ => ColorIndexing
+    }
+    if (seen & (1 << transform_type)) != 0 {
+      raise DecodeError::DuplicateVp8lTransform(transform_type)
+    }
+    seen = seen | (1 << transform_type)
+    match kind {
+      Predictor | CrossColor => {
+        let bits = reader.read(3).reinterpret_as_int() + 2
+        // The transform data is a subsampled image holding one entry per
+        // tile: the predictor mode or the color coefficients.
+        let tile_size = 1 << bits
+        let data = decode_image_stream(
+          reader,
+          div_round_up(current_width, tile_size),
+          div_round_up(height, tile_size),
+          false,
+          false,
+        )
+        transforms.push({
+          kind,
+          bits,
+          xsize: current_width,
+          palette_size: 0,
+          data,
+        })
+      }
+      SubtractGreen =>
+        transforms.push({
+          kind,
+          bits: 0,
+          xsize: current_width,
+          palette_size: 0,
+          data: [],
+        })
+      ColorIndexing => {
+        let color_count = reader.read(8).reinterpret_as_int() + 1
+        // Fewer colors buy more bits per index: pairs, quads, or bytes.
+        let bits = if color_count > 16 {
+          0
+        } else if color_count > 4 {
+          1
+        } else if color_count > 2 {
+          2
+        } else {
+          3
+        }
+        let original_width = current_width
+        current_width = div_round_up(current_width, 1 << bits)
+        // The palette is a one-pixel-high image, delta coded against the
+        // entry before it.
+        let raw_palette = decode_image_stream(
+          reader, color_count, 1, false, false,
+        )
+        transforms.push({
+          kind,
+          bits,
+          xsize: original_width,
+          palette_size: color_count,
+          data: cumulative_palette(raw_palette, color_count),
+        })
+      }
+    }
+  }
+  (transforms, current_width)
+}
+
+///|
+fn inverse_predictor(
+  pixels : Array[UInt],
+  width : Int,
+  height : Int,
+  transform : Vp8lTransform,
+) -> Array[UInt] raise DecodeError {
+  let output = Array::make(width * height, 0U)
+  let tile_width = 1 << transform.bits
+  let tiles_per_row = div_round_up(width, tile_width)
+  for y in 0..<height {
+    for x in 0..<width {
+      let index = y * width + x
+      // Border pixels ignore the tile mode: the top-left pixel predicts
+      // black, the rest of the top row predicts from the pixel on its left,
+      // and the leftmost pixel of every other row predicts from the pixel
+      // above it.
+      let prediction = if y == 0 && x == 0 {
+        0xff000000U
+      } else if y == 0 {
+        output[index - 1]
+      } else if x == 0 {
+        output[index - width]
+      } else {
+        let tile = (y >> transform.bits) * tiles_per_row + (x >> transform.bits)
+        // The low four bits of the green channel hold the mode; the
+        // reference decoder masks them off rather than validating the byte.
+        let mode = component(transform.data[tile], 8) & 0xf
+        // The rightmost column borrows the first pixel of its own row as the
+        // top-right neighbour.
+        let top_right = if x + 1 < width {
+          output[index - width + 1]
+        } else {
+          output[y * width]
+        }
+        predict_pixel(
+          mode,
+          output[index - 1],
+          output[index - width],
+          output[index - width - 1],
+          top_right,
+        )
+      }
+      output[index] = add_pixels(pixels[index], prediction)
+    }
+  }
+  output
+}
+
+///|
+fn inverse_cross_color(
+  pixels : Array[UInt],
+  width : Int,
+  height : Int,
+  transform : Vp8lTransform,
+) -> Array[UInt] {
+  let output = Array::make(width * height, 0U)
+  let tile_size = 1 << transform.bits
+  let tiles_per_row = div_round_up(width, tile_size)
+  for y in 0..<height {
+    for x in 0..<width {
+      let coefficient = transform.data[(y >> transform.bits) * tiles_per_row +
+        (x >> transform.bits)]
+      let green = component(pixels[y * width + x], 8)
+      let green_to_red = component(coefficient, 0)
+      let green_to_blue = component(coefficient, 8)
+      let red_to_blue = component(coefficient, 16)
+      let red = component(pixels[y * width + x], 16)
+      let blue = component(pixels[y * width + x], 0)
+      let new_red = (red + color_transform_delta(green_to_red, green)) & 0xff
+      let new_blue = (
+          blue +
+          color_transform_delta(green_to_blue, green) +
+          color_transform_delta(red_to_blue, new_red)
+        ) &
+        0xff
+      output[y * width + x] = (pixels[y * width + x] & 0xff00ff00U) |
+        (new_red.reinterpret_as_uint() << 16) |
+        new_blue.reinterpret_as_uint()
+    }
+  }
+  output
+}
+
+///|
+fn inverse_subtract_green(
+  pixels : Array[UInt],
+  width : Int,
+  height : Int,
+) -> Array[UInt] {
+  let output = Array::make(width * height, 0U)
+  for index in 0..<(width * height) {
+    let color = pixels[index]
+    let green = component(color, 8)
+    let red = (component(color, 16) + green) & 0xff
+    let blue = (component(color, 0) + green) & 0xff
+    output[index] = (color & 0xff00ff00U) |
+      (red.reinterpret_as_uint() << 16) |
+      blue.reinterpret_as_uint()
+  }
+  output
+}
+
+///|
+fn inverse_color_indexing(
+  pixels : Array[UInt],
+  packed_width : Int,
+  height : Int,
+  transform : Vp8lTransform,
+) -> Array[UInt] {
+  let width = transform.xsize
+  let output = Array::make(width * height, 0U)
+  let bits_per_index = 8 >> transform.bits
+  let pixels_per_byte = 1 << transform.bits
+  let index_mask = (1 << bits_per_index) - 1
+  for y in 0..<height {
+    for x in 0..<width {
+      let packed = pixels[y * packed_width + x / pixels_per_byte]
+      let green = component(packed, 8)
+      let shift = x % pixels_per_byte * bits_per_index
+      let index = (green >> shift) & index_mask
+      if index < transform.palette_size {
+        output[y * width + x] = transform.data[index]
+      }
+    }
+  }
+  output
+}
+
+///|
+fn inverse_transforms(
+  pixels : Array[UInt],
+  width : Int,
+  height : Int,
+  transforms : Array[Vp8lTransform],
+) -> Array[UInt] raise DecodeError {
+  let mut current = pixels
+  let mut current_width = width
+  let mut index = transforms.length()
+  while index > 0 {
+    index = index - 1
+    let transform = transforms[index]
+    match transform.kind {
+      Predictor =>
+        current = inverse_predictor(current, current_width, height, transform)
+      CrossColor =>
+        current = inverse_cross_color(current, current_width, height, transform)
+      SubtractGreen =>
+        current = inverse_subtract_green(current, current_width, height)
+      ColorIndexing => {
+        current = inverse_color_indexing(
+          current, current_width, height, transform,
+        )
+        current_width = transform.xsize
+      }
+    }
+  }
+  current
+}
+
+///|
 fn decode_image_stream(
   reader : BitReader,
   width : Int,
@@ -521,27 +948,34 @@ fn decode_image_stream(
   allow_transforms : Bool,
   allow_meta : Bool,
 ) -> Array[UInt] raise DecodeError {
-  if allow_transforms {
-    while reader.read(1) == 1U {
-      let transform_type = reader.read(2).reinterpret_as_int()
-      raise DecodeError::UnsupportedVp8lTransform(transform_type)
-    }
+  let (transforms, decoded_width) = if allow_transforms {
+    read_transforms(reader, width, height)
+  } else {
+    ([], width)
   }
   let cache = read_color_cache_info(reader)
   let selector = read_prefix_groups(
     reader,
-    width,
+    decoded_width,
     height,
     allow_meta,
     cache.size,
   )
-  decode_image_pixels(reader, width, height, cache, selector, distance_map())
+  let pixels = decode_image_pixels(
+    reader,
+    decoded_width,
+    height,
+    cache,
+    selector,
+    distance_map(),
+  )
+  inverse_transforms(pixels, decoded_width, height, transforms)
 }
 
 ///|
 /// Decode a standalone VP8L payload (beginning with its five-byte header).
-/// The returned pixels are ARGB. Level-zero transforms are not supported
-/// yet; a bitstream that uses one reports `UnsupportedVp8lTransform`.
+/// The returned pixels are ARGB, after every level-zero transform has been
+/// undone.
 pub fn decode_vp8l(data : BytesView) -> Vp8lImage raise DecodeError {
   let reader = BitReader::new(data)
   let header = read_vp8l_header(reader)

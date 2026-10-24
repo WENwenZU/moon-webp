@@ -7,9 +7,10 @@ hand it a whole file, get back an ARGB image — with `dwebp` as the
 cross-check reference on a corpus of real files.
 
 The library is a single package, `webp`. RIFF parsing and the VP8L image
-core — literals, LZ77 backward references, color cache, and meta prefix
-groups — are in place. Transforms, the WebP file wrapper, and animation
-are the remaining decoding layers.
+core are in place: literals, LZ77 backward references, color cache, meta
+prefix groups, and the four level-zero transforms (predictor,
+cross-color, subtract green, color indexing). The WebP file wrapper and
+animation are the remaining decoding layers.
 
 ## Building
 

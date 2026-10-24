@@ -332,3 +332,57 @@ test "handles absent and malformed meta prefix images" {
   let err = @test.expect_error(() => meta_prefix_group_count([]))
   @test.assert_eq(err, DecodeError::InvalidEntropyImage)
 }
+
+///|
+test "predicts with every mode from the RFC table" {
+  let left = 0xff112233U
+  let top = 0xff445566U
+  let top_left = 0xff778899U
+  let top_right = 0xffaabbccU
+  let expected = [
+    0xff000000U, 0xff112233U, 0xff445566U, 0xffaabbccU, 0xff778899U, 0xff506172U,
+    0xff445566U, 0xff2a3b4cU, 0xff5d6e7fU, 0xff778899U, 0xff5d6e7fU, 0xff112233U,
+    0xff000000U, 0xff041526U,
+  ]
+  for mode in 0..<14 {
+    @test.assert_eq(
+      predict_pixel(mode, left, top, top_left, top_right),
+      expected[mode],
+    )
+  }
+  let err = @test.expect_error(() => {
+    predict_pixel(14, left, top, top_left, top_right)
+  })
+  @test.assert_eq(err, DecodeError::InvalidPredictorMode(14))
+}
+
+///|
+test "clamps and selects on saturated neighbors" {
+  // Every channel of `left + top - top_left` wraps past 255 or below 0 here,
+  // so the clamping predictors have to saturate instead of wrapping.
+  let cases = [
+    (0xff000000U, 0xffffffffU, 0xffffffffU),
+    (0xff00ff00U, 0xff000000U, 0xffffffffU),
+    (0x80f0f0f0U, 0x00101010U, 0xff202020U),
+  ]
+  let expected = [
+    [0xff000000U, 0xff000000U, 0xff3f3f3fU],
+    [0xff000000U, 0xff000000U, 0xff003f00U],
+    [0x80f0f0f0U, 0x00e0e0e0U, 0x00b0b0b0U],
+  ]
+  for index in 0..<3 {
+    let (left, top, top_left) = cases[index]
+    @test.assert_eq(
+      predict_pixel(11, left, top, top_left, top),
+      expected[index][0],
+    )
+    @test.assert_eq(
+      predict_pixel(12, left, top, top_left, top),
+      expected[index][1],
+    )
+    @test.assert_eq(
+      predict_pixel(13, left, top, top_left, top),
+      expected[index][2],
+    )
+  }
+}
