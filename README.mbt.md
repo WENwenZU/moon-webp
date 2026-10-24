@@ -6,8 +6,10 @@ dependencies, no FFI, every backend. The end state is one entry point —
 hand it a whole file, get back an ARGB image — with `dwebp` as the
 cross-check reference on a corpus of real files.
 
-The library is a single package, `webp`. The container parser is done;
-the VP8L bitstream decoder is the next milestone.
+The library is a single package, `webp`. RIFF parsing and the VP8L image
+core — literals, LZ77 backward references, color cache, and meta prefix
+groups — are in place. Transforms, the WebP file wrapper, and animation
+are the remaining decoding layers.
 
 ## Building
 

@@ -4,14 +4,14 @@ test "reads VP8L bits least-significant-bit first across bytes" {
   @test.assert_eq(reader.read(3), 3U)
   @test.assert_eq(reader.read(5), 13U)
   @test.assert_eq(reader.read(1), 1U)
-  @test.assert_eq(reader.offset(), 9)
+  @test.assert_eq(reader.bit_position.val, 9)
 }
 
 ///|
 test "reads zero bits without moving and rejects invalid widths" {
   let reader = BitReader::new(b"\xff")
   @test.assert_eq(reader.read(0), 0U)
-  @test.assert_eq(reader.offset(), 0)
+  @test.assert_eq(reader.bit_position.val, 0)
   let negative = @test.expect_error(() => reader.read(-1))
   @test.assert_eq(negative, DecodeError::InvalidBitCount(-1))
   let wide = @test.expect_error(() => reader.read(25))
@@ -23,7 +23,7 @@ test "rejects a bit read past the input without moving" {
   let reader = BitReader::new(b"\xff")
   let err = @test.expect_error(() => reader.read(9))
   @test.assert_eq(err, DecodeError::UnexpectedEnd(1))
-  @test.assert_eq(reader.offset(), 0)
+  @test.assert_eq(reader.bit_position.val, 0)
 }
 
 ///|
@@ -36,7 +36,7 @@ test "decodes a hand-computed canonical prefix code" {
   @test.assert_eq(code.read_symbol(reader), 0)
   @test.assert_eq(code.read_symbol(reader), 1)
   @test.assert_eq(code.read_symbol(reader), 3)
-  @test.assert_eq(reader.offset(), 9)
+  @test.assert_eq(reader.bit_position.val, 9)
 }
 
 ///|
@@ -45,7 +45,7 @@ test "a single-symbol prefix code consumes no bits" {
   let reader = BitReader::new(b"\xff")
   @test.assert_eq(code.read_symbol(reader), 1)
   @test.assert_eq(code.read_symbol(reader), 1)
-  @test.assert_eq(reader.offset(), 0)
+  @test.assert_eq(reader.bit_position.val, 0)
 }
 
 ///|
@@ -63,7 +63,7 @@ test "reads a simple two-symbol prefix code" {
   // Simple form, two 8-bit symbols 5 and 9, followed by code 1.
   let reader = BitReader::new(b"\x2f\x48\x08")
   let code = read_prefix_code(reader, 16)
-  @test.assert_eq(reader.offset(), 19)
+  @test.assert_eq(reader.bit_position.val, 19)
   @test.assert_eq(code.read_symbol(reader), 9)
 }
 
@@ -72,9 +72,9 @@ test "accepts a duplicate simple symbol as a two-leaf tree" {
   // Both leaves name symbol 1, so decoding still consumes one bit.
   let reader = BitReader::new(b"\x1b\x00")
   let code = read_prefix_code(reader, 16)
-  @test.assert_eq(reader.offset(), 12)
+  @test.assert_eq(reader.bit_position.val, 12)
   @test.assert_eq(code.read_symbol(reader), 1)
-  @test.assert_eq(reader.offset(), 13)
+  @test.assert_eq(reader.bit_position.val, 13)
 }
 
 ///|
@@ -83,7 +83,7 @@ test "reads a normal canonical prefix code" {
   // It encodes target lengths [1, 2, 3, 3], then symbols 0/1/2/3.
   let reader = BitReader::new(b"\x04\x40\x24\x7a\xed")
   let code = read_prefix_code(reader, 4)
-  @test.assert_eq(reader.offset(), 31)
+  @test.assert_eq(reader.bit_position.val, 31)
   @test.assert_eq(code.read_symbol(reader), 0)
   @test.assert_eq(code.read_symbol(reader), 1)
   @test.assert_eq(code.read_symbol(reader), 2)
@@ -121,10 +121,9 @@ test "stops reading code lengths at max symbol" {
   // and the trailing alphabet entries stay unused.
   let reader = BitReader::new(b"\x00\x40\x82")
   let code = read_prefix_code(reader, 4)
-  @test.assert_eq(code.alphabet_size, 4)
-  @test.assert_eq(reader.offset(), 23)
+  @test.assert_eq(reader.bit_position.val, 23)
   @test.assert_eq(code.read_symbol(reader), 1)
-  @test.assert_eq(reader.offset(), 24)
+  @test.assert_eq(reader.bit_position.val, 24)
 }
 
 ///|
@@ -134,9 +133,9 @@ test "repeat 16 before a nonzero length defaults to eight" {
     b"\x0a\x00\x00\x20\xfe\xff\xff\xff\xff\xff\xff\xff\xff\xff\xbf\x7f",
   )
   let code = read_prefix_code(reader, 256)
-  @test.assert_eq(reader.offset(), 119)
+  @test.assert_eq(reader.bit_position.val, 119)
   @test.assert_eq(code.read_symbol(reader), 255)
-  @test.assert_eq(reader.offset(), 127)
+  @test.assert_eq(reader.bit_position.val, 127)
 }
 
 ///|
@@ -166,7 +165,7 @@ test "reads color cache size and validates its bit width" {
   let cache = read_color_cache_info(reader)
   @test.assert_eq(cache.bits, 11)
   @test.assert_eq(cache.size, 2048)
-  @test.assert_eq(reader.offset(), 5)
+  @test.assert_eq(reader.bit_position.val, 5)
   let zero = @test.expect_error(() => {
     read_color_cache_info(BitReader::new(b"\x01"))
   })
@@ -181,15 +180,127 @@ test "reads color cache size and validates its bit width" {
 test "reads all five codes in a prefix group" {
   let reader = BitReader::new(b"\x3d\x28\x42\x13\xaa\xd0\x05")
   let group = read_prefix_code_group(reader, 2)
-  @test.assert_eq(group.green.alphabet_size, 282)
   @test.assert_eq(group.green.single_symbol, 7)
-  @test.assert_eq(group.red.alphabet_size, 256)
   @test.assert_eq(group.red.single_symbol, 8)
   @test.assert_eq(group.blue.single_symbol, 9)
   @test.assert_eq(group.alpha.single_symbol, 10)
-  @test.assert_eq(group.distance.alphabet_size, 40)
   @test.assert_eq(group.distance.single_symbol, 11)
-  @test.assert_eq(reader.offset(), 55)
+  @test.assert_eq(reader.bit_position.val, 55)
+}
+
+///|
+test "maps length and distance prefix values" {
+  let reader = BitReader::new(b"\xff\xff")
+  @test.assert_eq(copy_value(reader, 0), 1)
+  @test.assert_eq(copy_value(reader, 1), 2)
+  @test.assert_eq(copy_value(reader, 2), 3)
+  @test.assert_eq(copy_value(reader, 3), 4)
+  @test.assert_eq(copy_value(reader, 4), 6)
+  @test.assert_eq(copy_value(reader, 5), 8)
+  @test.assert_eq(copy_value(reader, 23), 4096)
+}
+
+///|
+test "maps the 120 neighborhood distance codes" {
+  let offsets = distance_map()
+  @test.assert_eq(offsets.length(), 120)
+  @test.assert_eq(plane_distance(4, 1, offsets), 4)
+  @test.assert_eq(plane_distance(4, 2, offsets), 1)
+  @test.assert_eq(plane_distance(4, 3, offsets), 5)
+  @test.assert_eq(plane_distance(4, 4, offsets), 3)
+  @test.assert_eq(plane_distance(4, 120, offsets), 36)
+  @test.assert_eq(plane_distance(4, 121, offsets), 1)
+  @test.assert_eq(plane_distance(4, 124, offsets), 4)
+}
+
+///|
+test "hashes ARGB colors into the color cache" {
+  @test.assert_eq(color_cache_key(0xff110a22U, 2), 2)
+  @test.assert_eq(color_cache_key(0xffaabbccU, 2), 3)
+}
+
+///|
+fn test_symbol_code(
+  alphabet_size : Int,
+  symbol : Int,
+) -> PrefixCode raise DecodeError {
+  let lengths = Array::make(alphabet_size, 0)
+  lengths[symbol] = 1
+  PrefixCode::from_lengths(lengths)
+}
+
+///|
+fn test_group(
+  green_symbol : Int,
+  cache_size : Int,
+) -> PrefixCodeGroup raise DecodeError {
+  {
+    green: test_symbol_code(280 + cache_size, green_symbol),
+    red: test_symbol_code(256, 0),
+    blue: test_symbol_code(256, 0),
+    alpha: test_symbol_code(256, 255),
+    distance: test_symbol_code(40, 0),
+  }
+}
+
+///|
+test "rejects a backward reference before the start of the image" {
+  let selector = { meta: None, entropy: [], groups: [test_group(256, 0)], }
+  let err = @test.expect_error(() => {
+    decode_image_pixels(
+      BitReader::new(b""),
+      1,
+      1,
+      { bits: 0, size: 0, },
+      selector,
+      distance_map(),
+    )
+  })
+  @test.assert_eq(err, DecodeError::InvalidBackwardReference(1))
+}
+
+///|
+test "rejects a backward reference past the image end" {
+  let selector = { meta: None, entropy: [], groups: [test_group(259, 0)], }
+  let err = @test.expect_error(() => {
+    decode_image_pixels(
+      BitReader::new(b""),
+      1,
+      1,
+      { bits: 0, size: 0, },
+      selector,
+      distance_map(),
+    )
+  })
+  @test.assert_eq(err, DecodeError::BackwardReferenceOverrun(4))
+}
+
+///|
+test "rejects a color cache symbol without a cache" {
+  let selector = {
+    meta: None,
+    entropy: [],
+    groups: [
+      {
+        green: test_symbol_code(281, 280),
+        red: test_symbol_code(256, 0),
+        blue: test_symbol_code(256, 0),
+        alpha: test_symbol_code(256, 255),
+        distance: test_symbol_code(40, 0),
+      },
+    ],
+  }
+  let err = @test.expect_error(() => {
+    decode_image_pixels(
+      BitReader::new(b""),
+      1,
+      1,
+      { bits: 0, size: 0, },
+      selector,
+      distance_map(),
+    )
+  })
+  @test.assert_eq(err, DecodeError::InvalidColorCacheIndex(0))
 }
 
 ///|

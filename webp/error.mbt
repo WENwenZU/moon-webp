@@ -29,6 +29,14 @@ pub(all) suberror DecodeError {
   InvalidColorCacheBits(Int)
   /// An entropy image is empty or does not match its announced dimensions.
   InvalidEntropyImage
+  /// A level-zero VP8L transform is not supported yet (transform type).
+  UnsupportedVp8lTransform(Int)
+  /// A color cache symbol names an entry outside the allocated cache.
+  InvalidColorCacheIndex(Int)
+  /// A backward-reference distance is zero or reaches before the image.
+  InvalidBackwardReference(Int)
+  /// A backward-reference copy runs past the end of the image.
+  BackwardReferenceOverrun(Int)
 } derive(Eq, @debug.Debug)
 
 ///|

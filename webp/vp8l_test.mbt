@@ -40,3 +40,19 @@ test "rejects a nonzero VP8L version" {
   })
   @test.assert_eq(err, @webp.DecodeError::UnsupportedVp8lVersion(1U))
 }
+
+///|
+test "rejects an image stream cut off after the header" {
+  let err = @test.expect_error(() => @webp.decode_vp8l(b"\x2f\x01\x00\x00\x10"))
+  @test.assert_eq(err, @webp.DecodeError::UnexpectedEnd(5))
+}
+
+///|
+test "reports transforms that are not implemented yet" {
+  // A 2x1 image whose image stream starts with transform flag 1 and
+  // transform type 2.
+  let err = @test.expect_error(() => {
+    @webp.decode_vp8l(b"\x2f\x01\x00\x00\x10\x05")
+  })
+  @test.assert_eq(err, @webp.DecodeError::UnsupportedVp8lTransform(2))
+}
