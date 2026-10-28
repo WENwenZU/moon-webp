@@ -108,9 +108,18 @@ has ever seen.
 A corpus test keeps that comparison alive in CI by freezing `dwebp`'s
 output as one digest per image: a single pixel, a single row, a single
 column, odd dimensions, 300 pixels wide, a palette, noise, a gradient, and
-the alpha plane of a lossy file. Two more tests cut every sample at every
-length and flip every bit of the first payload bytes, so a damaged file has
-to come back as a `DecodeError` rather than a panic.
+the alpha plane of a lossy file.
+
+Four robustness tests then attack the decoder from the other side. Every
+prefix of every sample has to come back as a `DecodeError`, not a panic. A
+single flipped bit anywhere in the twelve bytes that spell `RIFF`, `WEBP`,
+and the chunk name must never be decoded past. Flipping any bit of the
+25-byte header — file size, chunk size, VP8L signature, dimensions, alpha
+hint, reserved version — must either be rejected or decode to an image
+whose pixel buffer matches the width and height it reports, so nothing
+downstream can read past it. And the same bit flips through the first
+stretch of the compressed payload cover the Huffman tables and transforms,
+where a wrong index would surface first.
 
 Coverage includes the header and prefix-code tables, LZ77 references,
 transforms, container layouts, alpha filters, animation compositing, and
