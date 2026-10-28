@@ -27,11 +27,17 @@ jobs:
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - run: moon test
       - run: moon test --target js
+      - run: moon test --target wasm
       - name: Run the examples
         run: |
           moon run examples/info
           moon run examples/preview > /dev/null
           moon run examples/frames > /dev/null
+      # The README claims the same source runs on every backend; the
+      # terminal preview is the cheapest proof that the JavaScript build
+      # produces identical pixels rather than merely compiling.
+      - name: Run an example on the JavaScript backend
+        run: moon run --target js examples/preview > /dev/null
 
   native:
     runs-on: ubuntu-latest

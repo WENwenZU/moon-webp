@@ -92,10 +92,14 @@ what the decoder hands back.
 
 ```bash
 moon check --deny-warn
-moon test
+moon test                    # wasm-gc
 moon test --target js
-moon test --target native   # needs a C compiler
+moon test --target wasm
+moon test --target native    # needs a C compiler
 ```
+
+CI runs all four, plus one example on the JavaScript backend, because the
+same source is supposed to produce the same pixels everywhere.
 
 The tests are self-contained: every fixture is embedded as a byte literal,
 so `moon test` needs no network and no reference tools. The fixtures
