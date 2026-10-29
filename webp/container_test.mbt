@@ -222,6 +222,19 @@ let canvas_too_large : Bytes = b"\x52\x49\x46\x46\x16\x00\x00\x00\x57\x45\x42\x5
   b"\x0a\x00\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff\xff\xff"
 
 ///|
+/// A `VP8X` canvas of 8192 by 16384, flagged as an animation: every side
+/// fits the format, but the 134M pixels are twice the budget this decoder
+/// allocates for.
+let canvas_over_budget : Bytes = b"\x52\x49\x46\x46\x16\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x58" +
+  b"\x0a\x00\x00\x00\x02\x00\x00\x00\xff\x1f\x00\xff\x3f\x00"
+
+///|
+/// A simple-format `VP8L` file whose header announces 16384 by 16384, the
+/// largest the 14-bit fields can carry and four times the pixel budget.
+let simple_over_budget : Bytes = b"\x52\x49\x46\x46\x11\x00\x00\x00\x57\x45\x42\x50\x56\x50\x38\x4c" +
+  b"\x05\x00\x00\x00\x2f\xff\xff\xff\x0f"
+
+///|
 /// A simple-format file whose first chunk is `ALPH` rather than an image.
 let alpha_first : Bytes = b"\x52\x49\x46\x46\x10\x00\x00\x00\x57\x45\x42\x50\x41\x4c\x50\x48" +
   b"\x04\x00\x00\x00\x00\x00\x00\x00"
@@ -323,6 +336,23 @@ test "reports the alpha hint of a simple-format file" {
 ///|
 test "rejects a canvas that cannot be addressed" {
   let err = @test.expect_error(() => @webp.webp_info(canvas_too_large))
+  @test.assert_eq(err, @webp.DecodeError::CanvasTooLarge)
+}
+
+///|
+/// The old bound only caught integer overflow, so a canvas of 8192 by
+/// 16384 walked past it and died trying to allocate 512 MB. Parsing the
+/// size is still fine; it is the allocation that has to be refused.
+test "refuses a canvas that fits in the fields but not in memory" {
+  let err = @test.expect_error(() => @webp.decode_animation(canvas_over_budget))
+  @test.assert_eq(err, @webp.DecodeError::CanvasTooLarge)
+}
+
+///|
+/// The simple format has no `VP8X` canvas at all, so the image header
+/// itself has to carry the same budget.
+test "refuses a simple-format image larger than the pixel budget" {
+  let err = @test.expect_error(() => @webp.decode_webp(simple_over_budget))
   @test.assert_eq(err, @webp.DecodeError::CanvasTooLarge)
 }
 

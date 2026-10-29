@@ -122,6 +122,7 @@ pub fn decode_webp(data : BytesView) -> WebPImage raise DecodeError {
   if !layout.is_lossless {
     raise DecodeError::UnsupportedLossyImage
   }
+  check_budget(layout.width, layout.height, 1)
   let image = decode_vp8l(layout.image)
   { width: image.width, height: image.height, pixels: image.pixels, }
 }
@@ -182,6 +183,7 @@ pub fn decode_alpha(data : BytesView) -> AlphaPlane raise DecodeError {
     None => raise DecodeError::MissingAlphaChunk
     Some(bytes) => bytes
   }
+  check_budget(layout.width, layout.height, 1)
   {
     width: layout.width,
     height: layout.height,
@@ -202,11 +204,13 @@ pub fn decode_animation(data : BytesView) -> WebPAnimation raise DecodeError {
   if !is_animation(preamble) {
     raise DecodeError::MissingAnimationFrame
   }
+  check_budget(preamble.width, preamble.height, 1)
   let (loop_count, background_color) = read_animation_header(preamble)
   let frames = read_frames(preamble)
   if frames.length() == 0 {
     raise DecodeError::MissingAnimationFrame
   }
+  check_budget(preamble.width, preamble.height, frames.length())
   let decoded : Array[Array[UInt]] = []
   for frame in frames {
     decoded.push(decode_frame_pixels(frame))
@@ -224,6 +228,35 @@ pub fn decode_animation(data : BytesView) -> WebPAnimation raise DecodeError {
 /// True when the `VP8X` header announces an animation.
 fn is_animation(preamble : WebPPreamble) -> Bool {
   preamble.has_vp8x && (preamble.flags & 0x02U) != 0U
+}
+
+///|
+/// Reject a declared size no WebP image can legally carry. `VP8` and
+/// `VP8L` store width-1 and height-1 in 14 bits, so 16384 is the largest
+/// any image can be, while a `VP8X` canvas field is 24 bits wide and can
+/// announce a size no image inside it could ever fill.
+///
+/// This is a format check, so it runs while parsing: `webp_info` should
+/// still report the size of a file it will later refuse to decode.
+fn check_dimensions(width : Int, height : Int) -> Unit raise DecodeError {
+  if width < 1 || height < 1 || width > 16384 || height > 16384 {
+    raise DecodeError::CanvasTooLarge
+  }
+}
+
+///|
+/// Refuse to allocate more than 256 MB of ARGB pixels: 67,108,864 of them,
+/// which is exactly the 8192 x 8192 the test suite has actually decoded.
+///
+/// A failed allocation traps on the wasm backends instead of coming back
+/// as a `DecodeError`, so the budget has to be enforced before the buffer
+/// is asked for rather than left to the allocator. `copies` is how many
+/// full-size buffers the call ends up holding: one for a still, one per
+/// composited frame for an animation.
+fn check_budget(width : Int, height : Int, copies : Int) -> Unit raise DecodeError {
+  if width.to_uint64() * height.to_uint64() * copies.to_uint64() > 67108864UL {
+    raise DecodeError::CanvasTooLarge
+  }
 }
 
 ///|
@@ -246,9 +279,7 @@ fn read_preamble(data : BytesView) -> WebPPreamble raise DecodeError {
   }
   let width = le_u24(first.payload, 4) + 1
   let height = le_u24(first.payload, 7) + 1
-  if width.to_uint64() * height.to_uint64() >= 1UL << 32 {
-    raise DecodeError::CanvasTooLarge
-  }
+  check_dimensions(width, height)
   { file, has_vp8x: true, width, height, flags: le_u32(first.payload, 0), }
 }
 
@@ -692,6 +723,7 @@ fn parse_vp8_frame_header(payload : BytesView) -> (Int, Int) raise DecodeError {
   if width == 0 || height == 0 {
     raise DecodeError::InvalidVp8Header
   }
+  check_dimensions(width, height)
   (width, height)
 }
 

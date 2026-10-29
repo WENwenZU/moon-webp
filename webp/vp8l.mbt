@@ -53,6 +53,7 @@ fn read_vp8l_header(reader : BitReader) -> Vp8lHeader raise DecodeError {
   }
   let width = reader.read(14).reinterpret_as_int() + 1
   let height = reader.read(14).reinterpret_as_int() + 1
+  check_dimensions(width, height)
   let alpha_is_used = reader.read(1) != 0U
   let version = reader.read(3)
   if version != 0U {
